@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from ...components.conv import CausalConv1d, CausalConv1dConfig
 from ...components.init import small_init_init_, wang_init_
@@ -96,13 +97,29 @@ class mLSTMLayer(nn.Module):
             bias=self.config.bias,
         )
         self.dropout = nn.Dropout(self.config.dropout)
+
+        self.lambda_proj = nn.Linear(
+            in_features=self.config.embedding_dim,
+            out_features=self.config.embedding_dim,
+            bias=self.config.bias,
+        )
+        self.lambda_up_proj = nn.Linear(
+            in_features=self.config.embedding_dim,
+            out_features=self.config._inner_embedding_dim,
+            bias=self.config.bias,
+        )
         self.reset_parameters()
 
-    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
+
+    def forward(self, x: torch.Tensor, lower_bound: torch.Tensor, **kwargs) -> torch.Tensor:
         B, S, _ = x.shape
+
+        lambda_ = lower_bound + (1 - lower_bound) * F.sigmoid(self.lambda_proj(x))
+        x = (1 - lambda_) * x
 
         # up-projection
         x_inner = self.proj_up(x)
+
         x_mlstm, z = torch.split(x_inner, split_size_or_sections=self.config._inner_embedding_dim, dim=-1)
 
         # mlstm branch
@@ -113,7 +130,10 @@ class mLSTMLayer(nn.Module):
         k = self.k_proj(x_mlstm_conv_act)
         v = self.v_proj(x_mlstm)
 
-        h_tilde_state = self.mlstm_cell(q=q, k=k, v=v)
+        h_tilde_state = self.mlstm_cell(q=q, k=k, v=v, lower_bound=lower_bound)
+
+        #
+        # h_tilde_state = h_tilde_state * self.lambda_up_proj(lower_bound)
 
         h_tilde_state_skip = h_tilde_state + (self.learnable_skip * x_mlstm_conv_act)
 

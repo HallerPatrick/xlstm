@@ -40,10 +40,11 @@ class mLSTMCell(nn.Module):
 
         self.reset_parameters()
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, lower_bound: torch.Tensor, **kwargs) -> torch.Tensor:
         B, S, _ = q.shape  # (B, S, H)
 
         if_gate_input = torch.cat([q, k, v], dim=-1)
+
         q = q.view(B, S, self.config.num_heads, -1)  # (B, S, NH, DH)
         k = k.view(B, S, self.config.num_heads, -1)  # (B, S, NH, DH)
         v = v.view(B, S, self.config.num_heads, -1)  # (B, S, NH, DH)
@@ -56,6 +57,10 @@ class mLSTMCell(nn.Module):
         igate_preact = self.igate(if_gate_input)  # (B, S, NH)
         igate_preact = igate_preact.transpose(-1, -2).unsqueeze(-1)  # (B, NH, S, 1)
         fgate_preact = self.fgate(if_gate_input)  # (B, S, NH)
+        
+        breakpoint()
+        # fgate_preact = torch.sigmoid(fgate_preact) * (1 - lower_bound) + lower_bound
+        fgate_preact = torch.sigmoid(fgate_preact) * (1 - lower_bound) + lower_bound
         fgate_preact = fgate_preact.transpose(-1, -2).unsqueeze(-1)  # (B, NH, S, 1)#
 
         h_state = self.backend_fn(

@@ -5,6 +5,7 @@ from typing import Optional
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from ..components.feedforward import FeedForwardConfig, create_feedforward
 from ..components.ln import LayerNorm
@@ -72,8 +73,10 @@ class xLSTMBlock(nn.Module):
 
         self.reset_parameters()
 
-    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
-        x = x + self.xlstm(self.xlstm_norm(x), **kwargs)
+    def forward(self, x: torch.Tensor, lower_bound: torch.Tensor, **kwargs) -> torch.Tensor:
+
+        x = x + self.xlstm(self.xlstm_norm(x), lower_bound, **kwargs)
+
         if self.ffn is not None:
             x = x + self.ffn(self.ffn_norm(x), **kwargs)
         return x

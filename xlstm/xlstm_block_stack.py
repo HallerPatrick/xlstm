@@ -6,6 +6,7 @@ from typing import Literal, Optional, Union
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from .blocks.mlstm.block import mLSTMBlock, mLSTMBlockConfig
 from .blocks.slstm.block import sLSTMBlock, sLSTMBlockConfig
@@ -86,6 +87,8 @@ class xLSTMBlockStack(nn.Module):
         else:
             self.post_blocks_norm = nn.Identity()
 
+        self.lower_bounds = nn.Parameter(torch.ones(len(config.block_map), config.embedding_dim), requires_grad=True)
+
     def _create_blocks(self, config: xLSTMBlockStackConfig):
 
         blocks = []
@@ -114,9 +117,14 @@ class xLSTMBlockStack(nn.Module):
             self.post_blocks_norm.reset_parameters()
 
     def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
+        lower_bounds = self.lower_bounds
+        lower_bounds = F.softmax(lower_bounds, dim=0)
+        lower_bounds = torch.cumsum(lower_bounds, dim=0)
+        lower_bounds -= lower_bounds[0, ...].clone()
 
-        for block in self.blocks:
-            x = block(x, **kwargs)
+        for layer_idx, block in enumerate(self.blocks):
+            lower_bound = lower_bounds[layer_idx]
+            x = block(x, lower_bound, **kwargs)
 
         x = self.post_blocks_norm(x)
 
